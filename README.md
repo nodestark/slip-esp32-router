@@ -6,8 +6,12 @@ This project implements Serial Line Internet Protocol (SLIP) on an ESP32 microco
 
 ## Features
 
-SLIP Protocol Implementation: Provides a lightweight IP communication method over serial lines.
-IP over Serial: Enables network communication using standard IP protocols over serial connections.
-Configurable Baud Rate: Supports various baud rates for serial communication.
-ESP-IDF Framework: Built using Espressif's IoT Development Framework (ESP-IDF), ensuring robust and reliable operation.
-Easy Integration: Simple to integrate with existing ESP32 projects or use as a standalone network interface.
+**SLIP Protocol Implementation:** Provides a lightweight IP communication method over serial lines.
+
+**IP over Serial:** Enables network communication using standard IP protocols over serial connections.
+
+**Configurable Baud Rate:** Supports various baud rates for serial communication.
+
+**ESP-IDF Framework:** Built using Espressif's IoT Development Framework (ESP-IDF), ensuring robust and reliable operation.
+
+**Easy Integration:** Simple to integrate with existing ESP32 projects or use as a standalone network interface.

@@ -7,6 +7,8 @@
 #include <nvs_flash.h>
 #include "esp_private/wifi.h"
 
+#include <arpa/inet.h>
+
 struct flow_wifi2eth_msg_t {
 	void *packet, *eb;
 	uint16_t length;
@@ -38,20 +40,39 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 	}
 }
 
-void vTaskCode(void *pvParameters) {
+#define SLIP_END 0xC0
+#define SLIP_ESC 0xDB
+#define SLIP_ESC_END 0xDC
+#define SLIP_ESC_ESC 0xDD
 
-	struct flow_wifi2eth_msg_t msg;
+struct slip_packet {
+	uint8_t data[65535 * 2]; // Buffer for SLIP-encoded data (worst case scenario)
+	size_t length;                        // Length of SLIP-encoded data
+};
 
-	while (1) {
+void slip_encode(const uint8_t *ip_packet, size_t ip_packet_len, struct slip_packet *slip) {
 
-		if (xQueueReceive(net0_queue, &msg, portMAX_DELAY)) {
+	size_t j= 0;
 
-			char* test_str = "This is a test string.\n";
-			uart_write_bytes(UART_NUM_0, (const char*) test_str, strlen(test_str));
+	slip->data[j++] = SLIP_END; // Start with an END character
 
-			esp_wifi_internal_free_rx_buffer(msg.eb);
+	for (size_t i = 0; i < ip_packet_len; i++) {
+		switch (ip_packet[i]) {
+		case SLIP_END:
+			slip->data[j++] = SLIP_ESC;
+			slip->data[j++] = SLIP_ESC_END;
+			break;
+		case SLIP_ESC:
+			slip->data[j++] = SLIP_ESC;
+			slip->data[j++] = SLIP_ESC_ESC;
+			break;
+		default:
+			slip->data[j++] = ip_packet[i];
 		}
 	}
+
+	slip->data[j++] = SLIP_END; // End with an END character
+	slip->length = j;
 }
 
 void app_main(void) {
@@ -68,6 +89,20 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK( uart_param_config(UART_NUM_0, &uart_config_0) );
 
+//	################################################################
+	ESP_ERROR_CHECK( uart_driver_install(UART_NUM_1, 256, 256, 0, (void *) 0, 0) );
+	ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, GPIO_NUM_27, GPIO_NUM_14, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) );
+
+	uart_config_t uart_config_1 = {
+			.baud_rate = 115200,
+			.data_bits = UART_DATA_8_BITS,
+			.parity = UART_PARITY_DISABLE,
+			.stop_bits = UART_STOP_BITS_1,
+			.flow_ctrl = UART_HW_FLOWCTRL_DISABLE };
+
+	ESP_ERROR_CHECK( uart_param_config(UART_NUM_1, &uart_config_1) );
+
+//	################################################################
 	net0_queue = xQueueCreate(21 /*queue-length*/, sizeof(struct flow_wifi2eth_msg_t));
 
 	ESP_ERROR_CHECK( esp_event_loop_create_default() );
@@ -91,5 +126,19 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK( esp_wifi_start() );
 
-	xTaskCreate( vTaskCode, "cpu_loop", 6765, (void *) 0, 1, (void*) 0 );
+//	xTaskCreate( vTaskCode, "cpu_loop", 6765, (void *) 0, 1, (void*) 0 );
+
+//	################################################################
+	struct flow_wifi2eth_msg_t msg;
+	while (1) {
+
+		if (xQueueReceive(net0_queue, &msg, 0)) {
+
+			struct slip_packet slip;
+		    slip_encode(msg.packet, msg.length, &slip);
+
+		    uart_write_bytes(UART_NUM_1, slip.data, slip.length);
+		}
+
+	}
 }

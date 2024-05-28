@@ -45,7 +45,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 
 struct slip_packet {
 	uint8_t data[65535 * 2]; 	// Buffer for SLIP-encoded data (worst case scenario)
-	uint32_t length;            // Length of SLIP-encoded data
+	uint16_t length;            // Length of SLIP-encoded data
 };
 
 void slip_encode(const uint8_t *packet, uint32_t packet_len, struct slip_packet *slip) {

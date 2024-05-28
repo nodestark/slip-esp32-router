@@ -7,8 +7,6 @@
 #include <nvs_flash.h>
 #include "esp_private/wifi.h"
 
-#include <arpa/inet.h>
-
 struct flow_wifi2eth_msg_t {
 	void *packet, *eb;
 	uint16_t length;
@@ -46,18 +44,17 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 #define SLIP_ESC_ESC 0xDD
 
 struct slip_packet {
-	uint8_t data[65535 * 2]; // Buffer for SLIP-encoded data (worst case scenario)
-	size_t length;                        // Length of SLIP-encoded data
+	uint8_t data[65535 * 2]; 	// Buffer for SLIP-encoded data (worst case scenario)
+	uint32_t length;            // Length of SLIP-encoded data
 };
 
-void slip_encode(const uint8_t *ip_packet, size_t ip_packet_len, struct slip_packet *slip) {
+void slip_encode(const uint8_t *packet, uint32_t packet_len, struct slip_packet *slip) {
 
-	size_t j= 0;
-
+	uint32_t j = 0;
 	slip->data[j++] = SLIP_END; // Start with an END character
 
-	for (size_t i = 0; i < ip_packet_len; i++) {
-		switch (ip_packet[i]) {
+	for (uint32_t i = 0; i < packet_len; i++) {
+		switch (packet[i]) {
 		case SLIP_END:
 			slip->data[j++] = SLIP_ESC;
 			slip->data[j++] = SLIP_ESC_END;
@@ -67,7 +64,7 @@ void slip_encode(const uint8_t *ip_packet, size_t ip_packet_len, struct slip_pac
 			slip->data[j++] = SLIP_ESC_ESC;
 			break;
 		default:
-			slip->data[j++] = ip_packet[i];
+			slip->data[j++] = packet[i];
 		}
 	}
 
@@ -126,19 +123,41 @@ void app_main(void) {
 
 	ESP_ERROR_CHECK( esp_wifi_start() );
 
-//	xTaskCreate( vTaskCode, "cpu_loop", 6765, (void *) 0, 1, (void*) 0 );
-
 //	################################################################
+	struct slip_packet _slip= {
+			.length = 0
+	};
+
 	struct flow_wifi2eth_msg_t msg;
 	while (1) {
 
 		if (xQueueReceive(net0_queue, &msg, 0)) {
 
-			struct slip_packet slip;
-		    slip_encode(msg.packet, msg.length, &slip);
+			struct slip_packet slip_;
+		    slip_encode(msg.packet, msg.length, &slip_);
 
-		    uart_write_bytes(UART_NUM_1, slip.data, slip.length);
+		    uart_write_bytes(UART_NUM_1, slip_.data, slip_.length);
 		}
 
+		uint8_t buff;
+		if(uart_read_bytes(UART_NUM_1, &buff, sizeof(buff), 0)){
+
+			if(buff == SLIP_END){
+
+				esp_wifi_internal_tx(WIFI_IF_STA, &_slip.data, _slip.length);
+				_slip.length = 0;
+
+			} else if(buff == SLIP_ESC){
+
+				if(uart_read_bytes(UART_NUM_1, &buff, sizeof(buff), 10 / portTICK_PERIOD_MS)){
+					if(buff == SLIP_ESC_END){
+						_slip.data[ _slip.length++ ] = SLIP_END;
+					} else if(buff == SLIP_ESC_ESC){
+						_slip.data[ _slip.length++ ] = SLIP_ESC;
+					}
+				}
+
+			} else _slip.data[ _slip.length++ ] = buff;
+		}
 	}
 }
